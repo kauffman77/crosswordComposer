@@ -58,69 +58,54 @@ def generateGraph(overlaps):
                 G.add_edge(pairA, pairB)
     return(G)
 
-def construct_layout(list_of_overlaps):
+def construct_layout(word_list,list_of_overlaps):
     """Construct a layout for the given list of character overlaps. Return
     the layout if feasibl. Return None if not possible. 
-    """
 
-    # First try horizontal/vertical consistency; construct a graph and
-    # then attempt a two-coloring
-    G = nx.Graph()
-    for pair in list_of_overlaps:
-        G.add_edge(pairFirstWord(pair), pairSecondWord(pair))
+    """
     try:
-        colors = nx.algorithms.bipartite.color(G)
+        # First try horizontal/vertical feasibility; construct a graph and
+        # then attempt a two-coloring
+        word_crossing_graph = nx.Graph()
+        word_crossing_graph.add_nodes_from(word_list)
+        for pair in list_of_overlaps:
+            word_crossing_graph.add_edge(pairFirstWord(pair), pairSecondWord(pair))
+        colors = nx.algorithms.bipartite.color(word_crossing_graph)
         col2hv = lambda v: (["horizontal","vertical"])[v]
         orientation = {k: col2hv(v) for k,v in colors.items()}
-        nx.set_node_attributes(G,'orientation',orientation)
+        nx.set_node_attributes(word_crossing_graph,'orientation',orientation)
+
+        # Now know that horiz/vert is feasible, try to construct a 2D
+        # layout by visiting each node in the word_crossing_graph in a
+        # breadth first fashion
+        coordinates_to_letter_word = {}
+        word_to_coordinates = {}
+        first_word = word_list[0]
+        
+        print("Beginning breadth first traversal")
+        for (wordA,wordB) in nx.bfs_edges(word_crossing_graph, first_word):
+            print(wordA +" "+wordB)
+            if not(wordA in word_to_coordinates):
+                word_to_coordinates[wordA] = "present"
+            if not(wordB in word_to_coordinates):
+                word_to_coordinates[wordB] = "present"
+
+        print(word_to_coordinates)
+        print("Remaining words: " + str(set(word_to_coordinates.keys()).difference(set(word_list))))
 
         return orientation
     except nx.NetworkXError:
         return None
 
 def ck_maximal_independent_set(G, nodes=None):
-    """Return a random maximal independent set guaranteed to contain
-    a given set of nodes.
-
-    An independent set is a set of nodes such that the subgraph
-    of G induced by these nodes contains no edges. A maximal
-    independent set is an independent set such that it is not possible
-    to add a new node and still get an independent set.
-    
-    Parameters
-    ----------
-    G : NetworkX graph 
-
-    nodes : list or iterable
-       Nodes that must be part of the independent set. This set of nodes
-       must be independent.
-
-    Returns
-    -------
-    indep_nodes : list 
-       List of nodes that are part of a maximal independent set.
-
-    Raises
-    ------
-    NetworkXUnfeasible
-       If the nodes in the provided list are not part of the graph or
-       do not form an independent set, an exception is raised.
-
-    Examples
-    --------
-    >>> G = nx.path_graph(5)
-    >>> nx.maximal_independent_set(G) # doctest: +SKIP
-    [4, 0, 2]
-    >>> nx.maximal_independent_set(G, [1]) # doctest: +SKIP
-    [1, 3]
-    
-    Notes
-    -----
-    This algorithm does not solve the maximum independent set problem.
+    """Modification of nx.maximal_independent_set(G) to induce
+    deterministic behavior. Inefficient right now due to to need to
+    sort whenever a set elemtn is extracted.
 
     """
+
     if not nodes:
-        nodes = set([sorted(list(G.nodes()))[0]])
+        nodes = set([sorted(list(G.nodes()))[0]]) # sorting required for determinism
     else:
         nodes = set(nodes)
     if not nodes.issubset(G):
@@ -131,7 +116,7 @@ def ck_maximal_independent_set(G, nodes=None):
     indep_nodes = list(nodes)
     available_nodes = set(G.nodes()).difference(neighbors.union(nodes))
     while available_nodes:
-        node = sorted(list(available_nodes))[0]
+        node = sorted(list(available_nodes))[0] # sorting required for determinism
         indep_nodes.append(node)
         available_nodes.difference_update(G.neighbors(node) + [node])
     return indep_nodes
@@ -140,26 +125,26 @@ def ck_maximal_independent_set(G, nodes=None):
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
-        print("usage: python ckGraphCrossword.py wordList.txt")
+        print("usage: python ckGraphCrossword.py word_list.txt")
         sys.exit(1)
 
     random.seed(123456789)
     filename = sys.argv[1]
-    wordList = []
+    word_list = []
     with open(filename) as f:
-        wordList = f.read().splitlines()
+        word_list = f.read().splitlines()
     
-    print("%d words read from %s" % (len(wordList),filename))
+    print("%d words read from %s" % (len(word_list),filename))
 
     # Over all pairs of words, call letterOverlaps
-    overlaps = wordListLetterOverlaps(wordList)
-    print("Overlaps constructed")
+    overlaps = wordListLetterOverlaps(word_list)
+    print("%d overlaps constructed"%(len(overlaps)))
     #print(overlaps)
     G = generateGraph(overlaps)
-    print("Graph constructed")
+    print("Overlap graph constructed")
     # nx.draw_networkx(G);     plt.show()
     maximal_overlaps = ck_maximal_independent_set(G)
-    print("Maximal independent set of overlaps determined")
+    print("%d overlaps in maximal independent"%(len(maximal_overlaps)))
     for i in sorted(maximal_overlaps):
         print(i)
 
@@ -169,9 +154,9 @@ if __name__ == '__main__':
     layout = None
     for subset_size in range(len(maximal_overlaps),0,-1):                   # Largest to smallest subsets
         for subset in itertools.combinations(maximal_overlaps,subset_size): # All possible subsets of given size
-            layout = construct_layout(subset)
+            layout = construct_layout(word_list,subset)
             if layout != None:
-                print("Found feasible layout with %d overlaps"%subset_size)
+                print("%d crossings in feasible layout"%subset_size)
                 feasible_overlaps = subset
                 break
         if feasible_overlaps != None:
@@ -180,7 +165,7 @@ if __name__ == '__main__':
     if feasible_overlaps == None:
         print("No maximal sets could be realized :(")
     else:
-        print("Feasible with subset:")
+        print("Feasible with crossings:")
         for o in feasible_overlaps:
             print(o)
         print(layout)
