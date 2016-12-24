@@ -120,20 +120,18 @@ def ck_maximal_independent_set(G, nodes=None):
 
     """
     if not nodes:
-        nodes = set([list(G.nodes())[0]])
+        nodes = set([sorted(list(G.nodes()))[0]])
     else:
         nodes = set(nodes)
     if not nodes.issubset(G):
-        raise nx.NetworkXUnfeasible(
-                "%s is not a subset of the nodes of G" % nodes)
+        raise nx.NetworkXUnfeasible("%s is not a subset of the nodes of G" % nodes)
     neighbors = set.union(*[set(G.neighbors(v)) for v in nodes])
     if set.intersection(neighbors, nodes):
-        raise nx.NetworkXUnfeasible(
-                "%s is not an independent set of G" % nodes)
+        raise nx.NetworkXUnfeasible("%s is not an independent set of G" % nodes)
     indep_nodes = list(nodes)
     available_nodes = set(G.nodes()).difference(neighbors.union(nodes))
     while available_nodes:
-        node = list(available_nodes)[0]
+        node = sorted(list(available_nodes))[0]
         indep_nodes.append(node)
         available_nodes.difference_update(G.neighbors(node) + [node])
     return indep_nodes
