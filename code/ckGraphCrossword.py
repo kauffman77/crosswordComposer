@@ -78,17 +78,20 @@ if __name__ == '__main__':
     #print(wordList)
 
     # Just a random word list for now
-    wordList = ['accumulates', 'adele', 'alphabetical', 'bandages', 'brasses', 'brazes', 'breeches', 'brightness', 'deftly', 'duckling', 'flynn',
-        'fricatives', 'galvin', 'ganymede', 'grounds', 'hymn', 'identification', 'inventory', 'kiss', 'languages', 'limerick', 'looming',
-        'messiah', 'michaels', 'mustaches', 'prehistoric', 'prejudicial', 'punching']
+    # wordList = ['accumulates', 'adele', 'alphabetical', 'bandages', 'brasses', 'brazes', 'breeches', 'brightness', 'deftly', 'duckling', 'flynn',
+    #     'fricatives', 'galvin', 'ganymede', 'grounds', 'hymn', 'identification', 'inventory', 'kiss', 'languages', 'limerick', 'looming',
+    #     'messiah', 'michaels', 'mustaches', 'prehistoric', 'prejudicial', 'punching']
     #wordList = wordList[0:20]
-    #wordList = ['deaf', 'dog', 'cringe', 'trifle', 'cat', 'lion', 'rind', 'paul', 'chris', 'kevin']
+    wordList = ['deaf', 'dog', 'cringe', 'trifle', 'cat', 'lion', 'rind', 'paul', 'chris', 'kevin']
     
     # Over all pairs of words, call letterOverlaps
     overlaps = wordListLetterOverlaps(wordList)
     print("Overlaps constructed")
     #print(overlaps)
     G = generateGraph(overlaps)
+
+    nx.draw_networkx(G);     plt.show()
+
     print("Graph constructed")
     for node in G.nodes():
         indList = nx.maximal_independent_set(G, [node])
