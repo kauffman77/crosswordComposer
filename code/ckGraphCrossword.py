@@ -2,6 +2,7 @@ import networkx as nx
 import matplotlib.pyplot as plt
 import random
 import sys
+import itertools
 
 def letterOverlaps(wordA, wordB):
     overlaps = []
@@ -67,34 +68,99 @@ def checkFeasibility(listOfPairs):
     except nx.NetworkXError:
         return False
 
-if __name__ == '__main__':
-    #with open('/Users/deronne/Downloads/linuxwords.txt') as f:
-    #    wordList = []
-    #    for line in f:
-    #        if random.random() < 0.001:
-    #            word = line.rstrip().lower()
-    #            wordList.append(word)
-    #print("Word list loaded: %d" %(len(wordList)))
-    #print(wordList)
+def ck_maximal_independent_set(G, nodes=None):
+    """Return a random maximal independent set guaranteed to contain
+    a given set of nodes.
 
-    # Just a random word list for now
-    # wordList = ['accumulates', 'adele', 'alphabetical', 'bandages', 'brasses', 'brazes', 'breeches', 'brightness', 'deftly', 'duckling', 'flynn',
-    #     'fricatives', 'galvin', 'ganymede', 'grounds', 'hymn', 'identification', 'inventory', 'kiss', 'languages', 'limerick', 'looming',
-    #     'messiah', 'michaels', 'mustaches', 'prehistoric', 'prejudicial', 'punching']
-    #wordList = wordList[0:20]
-    wordList = ['deaf', 'dog', 'cringe', 'trifle', 'cat', 'lion', 'rind', 'paul', 'chris', 'kevin']
+    An independent set is a set of nodes such that the subgraph
+    of G induced by these nodes contains no edges. A maximal
+    independent set is an independent set such that it is not possible
+    to add a new node and still get an independent set.
     
+    Parameters
+    ----------
+    G : NetworkX graph 
+
+    nodes : list or iterable
+       Nodes that must be part of the independent set. This set of nodes
+       must be independent.
+
+    Returns
+    -------
+    indep_nodes : list 
+       List of nodes that are part of a maximal independent set.
+
+    Raises
+    ------
+    NetworkXUnfeasible
+       If the nodes in the provided list are not part of the graph or
+       do not form an independent set, an exception is raised.
+
+    Examples
+    --------
+    >>> G = nx.path_graph(5)
+    >>> nx.maximal_independent_set(G) # doctest: +SKIP
+    [4, 0, 2]
+    >>> nx.maximal_independent_set(G, [1]) # doctest: +SKIP
+    [1, 3]
+    
+    Notes
+    -----
+    This algorithm does not solve the maximum independent set problem.
+
+    """
+    if not nodes:
+        nodes = set([list(G.nodes())[0]])
+    else:
+        nodes = set(nodes)
+    if not nodes.issubset(G):
+        raise nx.NetworkXUnfeasible(
+                "%s is not a subset of the nodes of G" % nodes)
+    neighbors = set.union(*[set(G.neighbors(v)) for v in nodes])
+    if set.intersection(neighbors, nodes):
+        raise nx.NetworkXUnfeasible(
+                "%s is not an independent set of G" % nodes)
+    indep_nodes = list(nodes)
+    available_nodes = set(G.nodes()).difference(neighbors.union(nodes))
+    while available_nodes:
+        node = list(available_nodes)[0]
+        indep_nodes.append(node)
+        available_nodes.difference_update(G.neighbors(node) + [node])
+    return indep_nodes
+
+
+
+if __name__ == '__main__':
+    if len(sys.argv) < 2:
+        print("usage: python ckGraphCrossword.py wordList.txt")
+        sys.exit(1)
+
+
+    filename = sys.argv[1]
+    wordList = []
+    with open(filename) as f:
+        wordList = f.read().splitlines()
+    
+    print("%d words read from %s" % (len(wordList),filename))
+
     # Over all pairs of words, call letterOverlaps
     overlaps = wordListLetterOverlaps(wordList)
     print("Overlaps constructed")
     #print(overlaps)
     G = generateGraph(overlaps)
 
-    nx.draw_networkx(G);     plt.show()
+    # nx.draw_networkx(G);     plt.show()
 
     print("Graph constructed")
+
+    # iterate over all independent sets stemming from a maximal
+    # independent set
+    indList = ck_maximal_independent_set(G)
+
+    for i in sorted(indList):
+        print(i)
+
     for node in G.nodes():
-        indList = nx.maximal_independent_set(G, [node])
         #print("Maximal independent set determined")
         feas = checkFeasibility(indList)
         if feas:
