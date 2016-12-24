@@ -69,10 +69,12 @@ def construct_layout(list_of_overlaps):
     for pair in list_of_overlaps:
         G.add_edge(pairFirstWord(pair), pairSecondWord(pair))
     try:
-        is_vertical = nx.algorithms.bipartite.color(G)
-        
+        colors = nx.algorithms.bipartite.color(G)
+        col2hv = lambda v: (["horizontal","vertical"])[v]
+        orientation = {k: col2hv(v) for k,v in colors.items()}
+        nx.set_node_attributes(G,'orientation',orientation)
 
-        return is_vertical
+        return orientation
     except nx.NetworkXError:
         return None
 
@@ -143,7 +145,7 @@ if __name__ == '__main__':
         print("usage: python ckGraphCrossword.py wordList.txt")
         sys.exit(1)
 
-
+    random.seed(123456789)
     filename = sys.argv[1]
     wordList = []
     with open(filename) as f:
@@ -160,8 +162,8 @@ if __name__ == '__main__':
     # nx.draw_networkx(G);     plt.show()
     maximal_overlaps = ck_maximal_independent_set(G)
     print("Maximal independent set of overlaps determined")
-    # for i in sorted(maximal_overlaps):
-    #     print(i)
+    for i in sorted(maximal_overlaps):
+        print(i)
 
     # iterate over all independent sets stemming from a maximal
     # independent set trying to find a feasible set
