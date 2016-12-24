@@ -58,15 +58,23 @@ def generateGraph(overlaps):
                 G.add_edge(pairA, pairB)
     return(G)
 
-def checkFeasibility(listOfPairs):
+def construct_layout(list_of_overlaps):
+    """Construct a layout for the given list of character overlaps. Return
+    the layout if feasibl. Return None if not possible. 
+    """
+
+    # First try horizontal/vertical consistency; construct a graph and
+    # then attempt a two-coloring
     G = nx.Graph()
-    for pair in listOfPairs:
+    for pair in list_of_overlaps:
         G.add_edge(pairFirstWord(pair), pairSecondWord(pair))
     try:
-        nx.algorithms.bipartite.color(G)
-        return True
+        is_vertical = nx.algorithms.bipartite.color(G)
+        
+
+        return is_vertical
     except nx.NetworkXError:
-        return False
+        return None
 
 def ck_maximal_independent_set(G, nodes=None):
     """Return a random maximal independent set guaranteed to contain
@@ -148,30 +156,31 @@ if __name__ == '__main__':
     print("Overlaps constructed")
     #print(overlaps)
     G = generateGraph(overlaps)
-
-    # nx.draw_networkx(G);     plt.show()
-
     print("Graph constructed")
+    # nx.draw_networkx(G);     plt.show()
+    maximal_overlaps = ck_maximal_independent_set(G)
+    print("Maximal independent set of overlaps determined")
+    # for i in sorted(maximal_overlaps):
+    #     print(i)
 
     # iterate over all independent sets stemming from a maximal
-    # independent set
-    indList = ck_maximal_independent_set(G)
-
-    for i in sorted(indList):
-        print(i)
-
-    for node in G.nodes():
-        #print("Maximal independent set determined")
-        feas = checkFeasibility(indList)
-        if feas:
-            print("Set can be realized!")
-            print(indList)
+    # independent set trying to find a feasible set
+    feasible_overlaps = None
+    layout = None
+    for subset_size in range(len(maximal_overlaps),0,-1):                   # Largest to smallest subsets
+        for subset in itertools.combinations(maximal_overlaps,subset_size): # All possible subsets of given size
+            layout = construct_layout(subset)
+            if layout != None:
+                print("Found feasible layout with %d overlaps"%subset_size)
+                feasible_overlaps = subset
+                break
+        if feasible_overlaps != None:
             break
-    if not feas:
+        
+    if feasible_overlaps == None:
         print("No maximal sets could be realized :(")
-    #nx.draw_networkx(G)
-    #plt.show()
-
-    #print(letterOverlaps('deaf','dog'))
-    #print(letterOverlaps('cringe','trifle'))
-    #print(letterOverlaps('deaf','trifle'))
+    else:
+        print("Feasible with subset:")
+        for o in feasible_overlaps:
+            print(o)
+        print(layout)
