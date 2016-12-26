@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import random
 import sys
 import itertools
+import logging as log
 
 def letterOverlaps(wordA, wordB):
     overlaps = []
@@ -96,8 +97,8 @@ def place_word_in_layout(layout,w_i,w_j,word,orientation):
         if cur_i==new_i and cur_j==new_j:
             return True         # Already present
         else:
-            print("Attempting to place at (%d,%d) when already at (%d,%d)"\
-                  %(new_i,new_j,cur_i,cur_j))
+            log.info("Attempting to place at (%d,%d) when already at (%d,%d)"\
+                     %(new_i,new_j,cur_i,cur_j))
             return False # Attempting to place new word in two places
 
     coords = []
@@ -109,17 +110,17 @@ def place_word_in_layout(layout,w_i,w_j,word,orientation):
         raise Exception("'%s' is not a valid orientation for word '%s'"%(orientation,word))
 
     # Place Word
-    for (coord,char) in zip(coords,word):
-        # coord = coords[index]
-        # char = word[index]
-        print("coord: %s char: %s"%(coord,char))
+    for index in range(len(word)):
+        coord = coords[index]
+        char = word[index]
+        log.debug("coord: %s char: %s"%(coord,char))
         if coord in layout["coords"]:
             existing_word = layout["coords"][coord][1]
             (e_i,e_j,_) = layout["words"][existing_word]
-            print("(%s,%d,%d) conflicts with (%s,%d,%d) at position (%d,%d)"\
-                  %(word,w_i,w_j,existing_word,e_i,e_j,coord[0],coord[1]))
+            log.info("(%s,%d,%d) conflicts with (%s,%d,%d) at position (%d,%d)"\
+                     %(word,w_i,w_j,existing_word,e_i,e_j,coord[0],coord[1]))
             return False
-        layout["coords"][coord] = (char,word,i,orientation)
+        layout["coords"][coord] = (char,word,index,orientation)
 
     layout["words"][word] = (w_i,w_j,orientation)
     return True
@@ -167,9 +168,9 @@ def construct_layout(word_list,list_of_crossings):
             word_crossing_index_dict[(wB,wA)] = (iB,iA)
         
 
-        print("Beginning breadth first traversal to place reached words")
+        log.info("Beginning breadth first traversal to place reached words")
         for (prev_word,next_word) in nx.bfs_edges(word_crossing_graph, first_word):
-            print("layout['coords'] = %s\nlayout['words'] = %s"%(layout["coords"],layout["words"]))
+            log.debug("layout['coords'] = %s\nlayout['words'] = %s"%(layout["coords"],layout["words"]))
             
             # Determine upper left i,j coordinates of the new_word
             # based on intersection of prev_word.
@@ -177,11 +178,11 @@ def construct_layout(word_list,list_of_crossings):
             (prev_i,prev_j,prev_o) = get_word_coordinates_orientation(layout,prev_word)
             (next_i,next_j,next_o) = (None,None,orientations[next_word])
             if prev_o == "horizontal" and next_o == "vertical":
-                print("prev_i: %s prev_j: %s prev_index: %s"%(prev_i,prev_j,prev_index))
+                log.debug("prev_i: %s prev_j: %s prev_index: %s"%(prev_i,prev_j,prev_index))
                 (cros_i,cros_j) = (prev_i,prev_j+prev_index)
                 (next_i,next_j) = (cros_i-next_index,cros_j)
             elif prev_o == "vertical" and next_o == "horizontal":
-                print("prev_i: %s prev_j: %s prev_index: %s"%(prev_i,prev_j,prev_index))
+                log.debug("prev_i: %s prev_j: %s prev_index: %s"%(prev_i,prev_j,prev_index))
                 (cros_i,cros_j) = (prev_i+prev_index,prev_j)
                 (next_i,next_j) = (cros_i,cros_j-next_index)
             else:
@@ -190,7 +191,7 @@ def construct_layout(word_list,list_of_crossings):
             
             success = place_word_in_layout(layout,next_i,next_j,next_word,next_o)
             if success:
-                print("Placed '%s'"%next_word)
+                log.info("Placed '%s'"%next_word)
             else:
                 return None
             
@@ -227,6 +228,8 @@ def ck_maximal_independent_set(G, nodes=None):
 
 
 if __name__ == '__main__':
+    log.basicConfig(level=log.INFO)
+
     if len(sys.argv) < 2:
         print("usage: python ckGraphCrossword.py word_list.txt")
         sys.exit(1)
@@ -237,19 +240,19 @@ if __name__ == '__main__':
     with open(filename) as f:
         word_list = f.read().splitlines()
     
-    print("%d words read from %s" % (len(word_list),filename))
+    log.info("%d words read from %s" % (len(word_list),filename))
 
     # Over all pairs of words, call letterOverlaps
     overlaps = wordListLetterOverlaps(word_list)
-    print("%d overlaps constructed"%(len(overlaps)))
+    log.info("%d overlaps constructed"%(len(overlaps)))
     #print(overlaps)
     G = generateGraph(overlaps)
-    print("Overlap graph constructed")
+    log.info("Overlap graph constructed")
     # nx.draw_networkx(G);     plt.show()
     maximal_overlaps = ck_maximal_independent_set(G)
-    print("%d overlaps in maximal independent"%(len(maximal_overlaps)))
+    log.info("%d overlaps in maximal independent"%(len(maximal_overlaps)))
     for i in sorted(maximal_overlaps):
-        print(i)
+        log.info(i)
 
     # iterate over all independent sets stemming from a maximal
     # independent set trying to find a feasible set
@@ -259,16 +262,16 @@ if __name__ == '__main__':
         for subset in itertools.combinations(maximal_overlaps,subset_size): # All possible subsets of given size
             layout = construct_layout(word_list,subset)
             if layout != None:
-                print("%d crossings in feasible layout"%subset_size)
+                log.info("%d crossings in feasible layout"%subset_size)
                 feasible_overlaps = subset
                 break
         if feasible_overlaps != None:
             break
         
     if feasible_overlaps == None:
-        print("No maximal sets could be realized :(")
+        log.info("No maximal sets could be realized :(")
     else:
-        print("Feasible with crossings:")
+        log.info("Feasible with crossings:")
         for o in feasible_overlaps:
-            print(o)
-        print(layout)
+            log.info(o)
+        log.info("layout: %s"%(layout))
