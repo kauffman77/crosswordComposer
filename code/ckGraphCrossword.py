@@ -60,7 +60,7 @@ def generateGraph(overlaps):
     return(G)
 
 # layout is a pair of maps which are
-#   "coords" : (i,j) -> ('A',word,index,orientation)
+#   "coords" : (i,j) -> [('A',word1,index1,orient1),('A',word2,index2,orient2)]
 #   'words'  : word -> (upper left i,j, orientation)
 
 def make_layout():
@@ -82,6 +82,25 @@ def get_word_coordinates_orientation(layout,word):
 def is_word_at_coordinates(layout,i,j):
     """Return True if there is a word with a character at the give coordinates""" 
     return (i,j) in layout["coords"]
+
+# def shift_to_origin(layout):
+#     """Shift the layout so that the min row/col is (0,0)"""
+#     # Could make this a little more efficient with a single pass
+#     # through the upper left coords of each word
+#     mini = min( i for (i,j) in layout["coords"].keys() ) 
+#     minj = min( j for (i,j) in layout["coords"].keys() )
+#     shifted = {}
+#     for (i,j), val in layout["coords"].items():
+#         shifted[(i+mini,j+minj)] = val
+#     layout["coords"] = shifted
+    
+#     shifted = {}
+#     for word,(i,j,orient) in layout["words"].items():
+#         shifted[word] = (i+mini,j+minj,orient)
+#     layout["words"] = shifted
+    
+# def twoD_string(layout):
+#     """Produce
 
 def place_word_in_layout(layout,w_i,w_j,word,orientation):
     """Place the word in the given layout with specified oritentation with
@@ -114,13 +133,26 @@ def place_word_in_layout(layout,w_i,w_j,word,orientation):
         coord = coords[index]
         char = word[index]
         log.debug("coord: %s char: %s"%(coord,char))
-        if coord in layout["coords"]:
-            existing_word = layout["coords"][coord][1]
-            (e_i,e_j,_) = layout["words"][existing_word]
-            log.info("(%s,%d,%d) conflicts with (%s,%d,%d) at position (%d,%d)"\
-                     %(word,w_i,w_j,existing_word,e_i,e_j,coord[0],coord[1]))
+        words_at_coord = layout["coords"].get(coord,  []) # default to empty list
+
+        if len(words_at_coord) > 1: # Check for too many words at a position already
+            log.info("multiple words '%s' already at (%d,%d), cannot place '%s' at (%d,%d)"\
+                     %(existing_words,coord[0],coord[1],word,w_i,w_j))
             return False
-        layout["coords"][coord] = (char,word,index,orientation)
+        elif len(words_at_coord) == 1: # Check existing word overlap at that position matches
+            (e_char,e_word,e_index,e_orient) = words_at_coord[0]
+            if char != e_char:
+                (e_i,e_j,_) = layout["words"][e_word]
+                log.info("(%s,%d,%d) conflicts with (%s,%d,%d) at position (%d,%d)"\
+                         %(word,w_i,w_j,e_word,e_i,e_j,coord[0],coord[1]))
+                return False
+
+        words_at_coord.append((char,word,index,orientation)) # Append word to list at that position
+        layout["coords"][coord] = words_at_coord             # Re-insert list in case it was fresh
+
+    # Successfully added all chars of word, now in layout
+    existing_words = layout["coords"][coord]
+
 
     layout["words"][word] = (w_i,w_j,orientation)
     return True
