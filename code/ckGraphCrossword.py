@@ -230,6 +230,9 @@ def construct_layout(word_list,list_of_crossings):
         for pair in list_of_crossings:
             word_crossing_graph.add_edge(pairFirstWord(pair), pairSecondWord(pair))
 
+        # Handle multiple components by iterating through all
+        # connected components starting here.
+
         # Can't handle disconnected components right now so bail on this
         if not (nx.is_connected(word_crossing_graph)):
             log.info("Word crossings not connected; layout failed")
