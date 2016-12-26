@@ -1,9 +1,15 @@
 import networkx as nx
 import matplotlib.pyplot as plt
+import numpy.random
 import random
 import sys
 import itertools
 import logging as log
+
+numpy.random.seed(123456789)
+random.seed(123456789)
+
+# log.basicConfig(level=log.INFO)
 
 def letterOverlaps(wordA, wordB):
     overlaps = []
@@ -83,26 +89,45 @@ def is_word_at_coordinates(layout,i,j):
     """Return True if there is a word with a character at the give coordinates""" 
     return (i,j) in layout["coords"]
 
-# def shift_to_origin(layout):
-#     """Shift the layout so that the min row/col is (0,0)"""
-#     # Could make this a little more efficient with a single pass
-#     # through the upper left coords of each word
-#     mini = min( i for (i,j) in layout["coords"].keys() ) 
-#     minj = min( j for (i,j) in layout["coords"].keys() )
-#     shifted = {}
-#     for (i,j), val in layout["coords"].items():
-#         shifted[(i+mini,j+minj)] = val
-#     layout["coords"] = shifted
+def shift_to_origin(layout):
+    """Shift the layout so that the min row/col is (0,0)"""
+    # Could make this a little more efficient with a single pass
+    # through the upper left coords of each word
+    mini = min( i for (i,j) in layout["coords"].keys() ) 
+    minj = min( j for (i,j) in layout["coords"].keys() )
+    shifted = {}
+    for (i,j), val in layout["coords"].items():
+        shifted[(i-mini,j-minj)] = val
+    layout["coords"] = shifted
     
-#     shifted = {}
-#     for word,(i,j,orient) in layout["words"].items():
-#         shifted[word] = (i+mini,j+minj,orient)
-#     layout["words"] = shifted
+    shifted = {}
+    for word,(i,j,orient) in layout["words"].items():
+        shifted[word] = (i-mini,j-minj,orient)
+    layout["words"] = shifted
     
-# def twoD_string(layout):
-#     """Produce
+def twoD_string(layout):
+    """Produce a 2D string for given layout. Calls shift_to_origin on the
+    layout
 
-def place_word_in_layout(layout,w_i,w_j,word,orientation):
+    """
+    shift_to_origin(layout)
+    maxi = max( i for (i,j) in layout["coords"].keys() ) 
+    maxj = max( j for (i,j) in layout["coords"].keys() )
+
+    strings = []
+    for i in range(maxi+1):
+        for j in range(maxj+1):
+            if (i,j) in layout["coords"]:
+                strings.append(layout["coords"][(i,j)][0][0])
+            else:
+                strings.append("-")
+        strings.append("\n")
+    layout_string = "".join(strings)
+    return layout_string
+                
+    
+
+def place_word_in_layout(layout,w_i,w_j,word,orientation, exclude_ends=False):
     """Place the word in the given layout with specified oritentation with
     coordinates i,j for its upper corner.  Modify layout to reflect
     this. Return True on successful placement.  If the word cannot be
@@ -121,12 +146,27 @@ def place_word_in_layout(layout,w_i,w_j,word,orientation):
             return False # Attempting to place new word in two places
 
     coords = []
+    ends = []
     if orientation=="horizontal":
         coords = list(zip([w_i]*len(word),range(w_j,w_j+len(word))))
+        ends = [(coords[0][0],coords[0][1]-1), (coords[-1][0],coords[-1][1]+1)]
     elif orientation=="vertical":
         coords = list(zip(range(w_i,w_i+len(word)),[w_j]*len(word)))
+        ends = [(coords[0][0]-1,coords[0][1]), (coords[-1][0]+1,coords[-1][1])]
     else:
         raise Exception("'%s' is not a valid orientation for word '%s'"%(orientation,word))
+
+    # Check ends for freeness
+    if exclude_ends:
+        for coord in ends:
+            words_at_coord = layout["coords"].get(coord,  []) # default to empty list
+            if len(words_at_coord) > 0:
+                (e_char,e_word,e_index,e_orient) = words_at_coord[0]
+                (e_i,e_j,_) = layout["words"][e_word]
+                log.info("(%s,%d,%d) conflicts with (%s,%d,%d) at position (%d,%d)"\
+                         %(word,w_i,w_j,e_word,e_i,e_j,coord[0],coord[1]))
+                return False
+            
 
     # Place Word
     for index in range(len(word)):
@@ -149,6 +189,7 @@ def place_word_in_layout(layout,w_i,w_j,word,orientation):
 
         words_at_coord.append((char,word,index,orientation)) # Append word to list at that position
         layout["coords"][coord] = words_at_coord             # Re-insert list in case it was fresh
+    
 
     # Successfully added all chars of word, now in layout
     existing_words = layout["coords"][coord]
@@ -177,7 +218,7 @@ def construct_layout(word_list,list_of_crossings):
         colors = nx.algorithms.bipartite.color(word_crossing_graph)
         col2hv = lambda v: (["horizontal","vertical"])[v]
         orientations = {k: col2hv(v) for k,v in colors.items()}
-        # nx.set_node_attributes(word_crossing_graph,'orientation',orientation) # Not needed
+        log.info("Horizontal/Vertical feasible layout found")
 
         # Now know that horiz/vert is feasible, try to construct a 2D
         # layout by visiting each node in the word_crossing_graph in a
@@ -231,6 +272,7 @@ def construct_layout(word_list,list_of_crossings):
         return layout
 
     except nx.NetworkXError:
+        log.info("Horizontal/Vertical infeasible backtracking")
         return None
 
 def ck_maximal_independent_set(G, nodes=None):
@@ -260,13 +302,11 @@ def ck_maximal_independent_set(G, nodes=None):
 
 
 if __name__ == '__main__':
-    log.basicConfig(level=log.INFO)
 
     if len(sys.argv) < 2:
         print("usage: python ckGraphCrossword.py word_list.txt")
         sys.exit(1)
 
-    random.seed(123456789)
     filename = sys.argv[1]
     word_list = []
     with open(filename) as f:
@@ -292,6 +332,7 @@ if __name__ == '__main__':
     layout = None
     for subset_size in range(len(maximal_overlaps),0,-1):                   # Largest to smallest subsets
         for subset in itertools.combinations(maximal_overlaps,subset_size): # All possible subsets of given size
+            log.info("Trying subset size %d: %s"%(subset_size,subset))
             layout = construct_layout(word_list,subset)
             if layout != None:
                 log.info("%d crossings in feasible layout"%subset_size)
@@ -306,4 +347,9 @@ if __name__ == '__main__':
         log.info("Feasible with crossings:")
         for o in feasible_overlaps:
             log.info(o)
-        log.info("layout: %s"%(layout))
+        log.info("feasible layout: %s"%(layout))
+        log.debug("coords: %s"%(sorted(layout["coords"].items())))
+        layout_string = twoD_string(layout)
+        log.debug("coords: %s"%(sorted(layout["coords"].items())))
+        print(layout_string)
+        
