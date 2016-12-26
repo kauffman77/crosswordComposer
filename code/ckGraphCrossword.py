@@ -58,42 +58,145 @@ def generateGraph(overlaps):
                 G.add_edge(pairA, pairB)
     return(G)
 
-def construct_layout(word_list,list_of_overlaps):
-    """Construct a layout for the given list of character overlaps. Return
+# layout is a pair of maps which are
+#   "coords" : (i,j) -> ('A',word,index,orientation)
+#   'words'  : word -> (upper left i,j, orientation)
+
+def make_layout():
+    return {"words":{}, "coords":{}}
+
+def contains_word(layout,word):
+    """Return true if the given word has already been placed in the layout"""
+    return word in layout["words"]
+
+
+def get_word_coordinates_orientation(layout,word):
+    """Return the (i,j,orientation) for the given word. i,j are for the
+    upper left character in the word. Throw an exception if word is
+    not present.
+
+    """
+    return layout["words"][word]
+
+def is_word_at_coordinates(layout,i,j):
+    """Return True if there is a word with a character at the give coordinates""" 
+    return (i,j) in layout["coords"]
+
+def place_word_in_layout(layout,w_i,w_j,word,orientation):
+    """Place the word in the given layout with specified oritentation with
+    coordinates i,j for its upper corner.  Modify layout to reflect
+    this. Return True on successful placement.  If the word cannot be
+    placed due to conflicts with existing words, return False.  Throw
+    an exception if this word is already in the layout
+
+    """
+    # Check whether new_word has already been placed somewhere else
+    if contains_word(layout,word):
+        (cur_i,cur_j,cur_o) = get_word_coordinates_orientation(layout,new_word)
+        if cur_i==new_i and cur_j==new_j:
+            return True         # Already present
+        else:
+            print("Attempting to place at (%d,%d) when already at (%d,%d)"\
+                  %(new_i,new_j,cur_i,cur_j))
+            return False # Attempting to place new word in two places
+
+    coords = []
+    if orientation=="horizontal":
+        coords = list(zip([w_i]*len(word),range(w_j,w_j+len(word))))
+    elif orientation=="vertical":
+        coords = list(zip(range(w_i,w_i+len(word)),[w_j]*len(word)))
+    else:
+        raise Exception("'%s' is not a valid orientation for word '%s'"%(orientation,word))
+
+    # Place Word
+    for (coord,char) in zip(coords,word):
+        # coord = coords[index]
+        # char = word[index]
+        print("coord: %s char: %s"%(coord,char))
+        if coord in layout["coords"]:
+            existing_word = layout["coords"][coord][1]
+            (e_i,e_j,_) = layout["words"][existing_word]
+            print("(%s,%d,%d) conflicts with (%s,%d,%d) at position (%d,%d)"\
+                  %(word,w_i,w_j,existing_word,e_i,e_j,coord[0],coord[1]))
+            return False
+        layout["coords"][coord] = (char,word,i,orientation)
+
+    layout["words"][word] = (w_i,w_j,orientation)
+    return True
+                    
+
+def construct_layout(word_list,list_of_crossings):
+
+    """Construct a layout for the given list of character crossings. Return
     the layout if feasibl. Return None if not possible. 
 
     """
     try:
+        # print("CROSSINGS: "+str(list_of_crossings))
+
         # First try horizontal/vertical feasibility; construct a graph and
         # then attempt a two-coloring
         word_crossing_graph = nx.Graph()
         word_crossing_graph.add_nodes_from(word_list)
-        for pair in list_of_overlaps:
+
+        for pair in list_of_crossings:
             word_crossing_graph.add_edge(pairFirstWord(pair), pairSecondWord(pair))
         colors = nx.algorithms.bipartite.color(word_crossing_graph)
         col2hv = lambda v: (["horizontal","vertical"])[v]
-        orientation = {k: col2hv(v) for k,v in colors.items()}
-        nx.set_node_attributes(word_crossing_graph,'orientation',orientation)
+        orientations = {k: col2hv(v) for k,v in colors.items()}
+        # nx.set_node_attributes(word_crossing_graph,'orientation',orientation) # Not needed
 
         # Now know that horiz/vert is feasible, try to construct a 2D
         # layout by visiting each node in the word_crossing_graph in a
-        # breadth first fashion
-        coordinates_to_letter_word = {}
-        word_to_coordinates = {}
+        # breadth first fashion. 2D coorindates are arbitrary
+        # pos/negative. Transpose layout after placement so that the
+        # upper left is at (0,0).
+        layout = make_layout()
+
+        # Place to the first word, subsequent words are the second in
+        # the pair of breadth first edges.
         first_word = word_list[0]
+        place_word_in_layout(layout,0,0,first_word,orientations[first_word])
         
-        print("Beginning breadth first traversal")
-        for (wordA,wordB) in nx.bfs_edges(word_crossing_graph, first_word):
-            print(wordA +" "+wordB)
-            if not(wordA in word_to_coordinates):
-                word_to_coordinates[wordA] = "present"
-            if not(wordB in word_to_coordinates):
-                word_to_coordinates[wordB] = "present"
+        # Need to look up crossing indices during placement to
+        # determine starting positions of new words.
+        word_crossing_index_dict = {}
+        for pair in list_of_crossings:
+            ((wA,iA),(wB,iB)) = (pairFirstWordWordIndex(pair),pairSecondWordWordIndex(pair))
+            word_crossing_index_dict[(wA,wB)] = (iA,iB)
+            word_crossing_index_dict[(wB,wA)] = (iB,iA)
+        
 
-        print(word_to_coordinates)
-        print("Remaining words: " + str(set(word_to_coordinates.keys()).difference(set(word_list))))
+        print("Beginning breadth first traversal to place reached words")
+        for (prev_word,next_word) in nx.bfs_edges(word_crossing_graph, first_word):
+            print("layout['coords'] = %s\nlayout['words'] = %s"%(layout["coords"],layout["words"]))
+            
+            # Determine upper left i,j coordinates of the new_word
+            # based on intersection of prev_word.
+            (prev_index,next_index) = word_crossing_index_dict[(prev_word,next_word)]
+            (prev_i,prev_j,prev_o) = get_word_coordinates_orientation(layout,prev_word)
+            (next_i,next_j,next_o) = (None,None,orientations[next_word])
+            if prev_o == "horizontal" and next_o == "vertical":
+                print("prev_i: %s prev_j: %s prev_index: %s"%(prev_i,prev_j,prev_index))
+                (cros_i,cros_j) = (prev_i,prev_j+prev_index)
+                (next_i,next_j) = (cros_i-next_index,cros_j)
+            elif prev_o == "vertical" and next_o == "horizontal":
+                print("prev_i: %s prev_j: %s prev_index: %s"%(prev_i,prev_j,prev_index))
+                (cros_i,cros_j) = (prev_i+prev_index,prev_j)
+                (next_i,next_j) = (cros_i,cros_j-next_index)
+            else:
+                raise Exception("Invalid orientation pairs: prev_word: '%s' as '%s', next_word: '%s' as '%s'"\
+                                % (prev_word,prev_o,next_word,next_o))
+            
+            success = place_word_in_layout(layout,next_i,next_j,next_word,next_o)
+            if success:
+                print("Placed '%s'"%next_word)
+            else:
+                return None
+            
+        # Placed all words, return the layout
+        return layout
 
-        return orientation
     except nx.NetworkXError:
         return None
 
