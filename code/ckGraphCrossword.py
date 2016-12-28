@@ -9,7 +9,8 @@ import logging as log
 numpy.random.seed(123456789)
 random.seed(123456789)
 
-# log.basicConfig(level=log.INFO)
+log.basicConfig(level=log.INFO)
+# log.basicConfig(filename="cross.log",level=log.INFO)
 
 def letterOverlaps(wordA, wordB):
     overlaps = []
@@ -26,6 +27,8 @@ def wordListLetterOverlaps(wordList):
             for overlap in letterOverlaps(wordList[i], wordList[j]):
                 allOverlaps.append(overlap)
     return(allOverlaps)    
+
+# pair of word overlaps is (wordA,indexA,wordB,indexB)
 
 def pairFirstWord(overlapPair):
     return overlapPair[0]
@@ -70,7 +73,7 @@ def generateGraph(overlaps):
 #   'words'  : word -> (upper left i,j, orientation)
 
 def make_layout():
-    return {"words":{}, "coords":{}}
+    return {"words":{}, "coords":{}, "components":1}
 
 def contains_word(layout,word):
     """Return true if the given word has already been placed in the layout"""
@@ -89,21 +92,27 @@ def is_word_at_coordinates(layout,i,j):
     """Return True if there is a word with a character at the give coordinates""" 
     return (i,j) in layout["coords"]
 
-def shift_to_origin(layout):
-    """Shift the layout so that the min row/col is (0,0)"""
-    # Could make this a little more efficient with a single pass
-    # through the upper left coords of each word
-    mini = min( i for (i,j) in layout["coords"].keys() ) 
-    minj = min( j for (i,j) in layout["coords"].keys() )
+def shift(layout,d_i,d_j):
+    """Shift the given layout by adding (d_i,d_j) onto every character
+    coordinate of the layout
+
+    """
     shifted = {}
     for (i,j), val in layout["coords"].items():
-        shifted[(i-mini,j-minj)] = val
+        shifted[(i+d_i,j+d_j)] = val
     layout["coords"] = shifted
     
     shifted = {}
     for word,(i,j,orient) in layout["words"].items():
-        shifted[word] = (i-mini,j-minj,orient)
+        shifted[word] = (i+d_i,j+d_j,orient)
     layout["words"] = shifted
+    
+
+def shift_to_origin(layout):
+    """Shift the layout so that the min row/col is (0,0)"""
+    mini = min( i for (i,j) in layout["coords"].keys() ) 
+    minj = min( j for (i,j) in layout["coords"].keys() )
+    shift(layout,-mini,-minj)
     
 def twoD_string(layout):
     """Produce a 2D string for given layout. Calls shift_to_origin on the
@@ -177,7 +186,7 @@ def place_word_in_layout(layout,w_i,w_j,word,orientation, exclude_boundary=False
 
         if len(words_at_coord) > 1: # Check for too many words at a position already
             log.info("multiple words '%s' already at (%d,%d), cannot place '%s' at (%d,%d)"\
-                     %(existing_words,coord[0],coord[1],word,w_i,w_j))
+                     %(words_at_coord,coord[0],coord[1],word,w_i,w_j))
             return False
         elif len(words_at_coord) == 1: # Check existing word overlap at that position matches
             (e_char,e_word,e_index,e_orient) = words_at_coord[0]
@@ -216,90 +225,131 @@ def place_word_in_layout(layout,w_i,w_j,word,orientation, exclude_boundary=False
     return True
                     
 
-def construct_layout(word_list,list_of_crossings):
-    """Construct a layout for the given list of character crossings. Return
-    the layout if feasibl. Return None if not possible. 
+def construct_layout_for_connected_graph(word_crossing_graph):
+    """Construct a layout for a single word crossing graph. The parameter
+    graph of word crossings must be connected. Return the layout if
+    feasibl. Return None if not possible.
 
     """
+    # Error checking
+    if not (nx.is_connected(word_crossing_graph)):
+        log.info("Word crossings not connected; layout failed for graph")
+        return None
+    
+    # Try horizontal/vertical feasibility; construct a graph and
+    # then attempt a two-coloring
+    colors = None
     try:
-        # print("CROSSINGS: "+str(list_of_crossings))
-
-        word_crossing_graph = nx.Graph()
-        word_crossing_graph.add_nodes_from(word_list)
-
-        for pair in list_of_crossings:
-            word_crossing_graph.add_edge(pairFirstWord(pair), pairSecondWord(pair))
-
-        # Handle multiple components by iterating through all
-        # connected components starting here.
-
-        # Can't handle disconnected components right now so bail on this
-        if not (nx.is_connected(word_crossing_graph)):
-            log.info("Word crossings not connected; layout failed")
-            return None
-
-        # Try horizontal/vertical feasibility; construct a graph and
-        # then attempt a two-coloring
         colors = nx.algorithms.bipartite.color(word_crossing_graph)
-        col2hv = lambda v: (["horizontal","vertical"])[v]
-        orientations = {k: col2hv(v) for k,v in colors.items()}
-        log.info("Horizontal/Vertical feasible layout found")
-
-        # Now know that horiz/vert is feasible, try to construct a 2D
-        # layout by visiting each node in the word_crossing_graph in a
-        # breadth first fashion. 2D coorindates are arbitrary
-        # pos/negative. Transpose layout after placement so that the
-        # upper left is at (0,0).
-        layout = make_layout()
-
-        # Place to the first word, subsequent words are the second in
-        # the pair of breadth first edges.
-        first_word = word_list[0]
-        place_word_in_layout(layout,0,0,first_word,orientations[first_word],exclude_boundary=False)
-        
-        # Need to look up crossing indices during placement to
-        # determine starting positions of new words.
-        word_crossing_index_dict = {}
-        for pair in list_of_crossings:
-            ((wA,iA),(wB,iB)) = (pairFirstWordWordIndex(pair),pairSecondWordWordIndex(pair))
-            word_crossing_index_dict[(wA,wB)] = (iA,iB)
-            word_crossing_index_dict[(wB,wA)] = (iB,iA)
-        
-
-        log.info("Beginning breadth first traversal to place reached words")
-        for (prev_word,next_word) in nx.bfs_edges(word_crossing_graph, first_word):
-            log.debug("layout['coords'] = %s\nlayout['words'] = %s"%(layout["coords"],layout["words"]))
-            
-            # Determine upper left i,j coordinates of the new_word
-            # based on intersection of prev_word.
-            (prev_index,next_index) = word_crossing_index_dict[(prev_word,next_word)]
-            (prev_i,prev_j,prev_o) = get_word_coordinates_orientation(layout,prev_word)
-            (next_i,next_j,next_o) = (None,None,orientations[next_word])
-            if prev_o == "horizontal" and next_o == "vertical":
-                log.debug("prev_i: %s prev_j: %s prev_index: %s"%(prev_i,prev_j,prev_index))
-                (cros_i,cros_j) = (prev_i,prev_j+prev_index)
-                (next_i,next_j) = (cros_i-next_index,cros_j)
-            elif prev_o == "vertical" and next_o == "horizontal":
-                log.debug("prev_i: %s prev_j: %s prev_index: %s"%(prev_i,prev_j,prev_index))
-                (cros_i,cros_j) = (prev_i+prev_index,prev_j)
-                (next_i,next_j) = (cros_i,cros_j-next_index)
-            else:
-                raise Exception("Invalid orientation pairs: prev_word: '%s' as '%s', next_word: '%s' as '%s'"\
-                                % (prev_word,prev_o,next_word,next_o))
-            
-            success = place_word_in_layout(layout,next_i,next_j,next_word,next_o,exclude_boundary=False)
-            if success:
-                log.info("Placed '%s'"%next_word)
-            else:
-                log.info("Failed at '%s'"%next_word)
-                return None
-            
-        # Placed all words return layout
-        return layout
-
     except nx.NetworkXError:
         log.info("Horizontal/Vertical infeasible backtracking")
         return None
+    
+    col2hv = lambda v: (["horizontal","vertical"])[v]
+    orientations = {k: col2hv(v) for k,v in colors.items()}
+    log.info("Horizontal/Vertical feasible layout found")
+
+    # Now know that horiz/vert is feasible, try to construct a 2D
+    # layout by visiting each node in the word_crossing_graph in a
+    # breadth first fashion. 2D coorindates are arbitrary
+    # pos/negative. Transpose layout after placement so that the
+    # upper left is at (0,0).
+    layout = make_layout()
+
+
+    # Place to the first word, subsequent words are the second in
+    # the pair of breadth first edges.
+    word_list = sorted(word_crossing_graph.nodes())
+    first_word = word_list[0]
+    place_word_in_layout(layout,0,0,first_word,orientations[first_word],exclude_boundary=False)
+
+    # Construct the layout by visiting each word crossing, place words
+    # as they are encountered or check that their position is
+    # consistent with new crossings on the word
+    log.info("Beginning breadth first traversal to place reached words")
+    for (prev_word,next_word) in nx.bfs_edges(word_crossing_graph, first_word):
+        log.debug("layout['coords'] = %s\nlayout['words'] = %s"%(layout["coords"],layout["words"]))
+
+        # Determine upper left i,j coordinates of the new_word
+        # based on intersection of prev_word.
+        word_index_dict = word_crossing_graph[prev_word][next_word] # retrieve graph label
+        (prev_index,next_index) = (word_index_dict[prev_word],word_index_dict[next_word])
+        (prev_i,prev_j,prev_o) = get_word_coordinates_orientation(layout,prev_word)
+        (next_i,next_j,next_o) = (None,None,orientations[next_word])
+        if prev_o == "horizontal" and next_o == "vertical":
+            log.debug("prev_i: %s prev_j: %s prev_index: %s"%(prev_i,prev_j,prev_index))
+            (cros_i,cros_j) = (prev_i,prev_j+prev_index)
+            (next_i,next_j) = (cros_i-next_index,cros_j)
+        elif prev_o == "vertical" and next_o == "horizontal":
+            log.debug("prev_i: %s prev_j: %s prev_index: %s"%(prev_i,prev_j,prev_index))
+            (cros_i,cros_j) = (prev_i+prev_index,prev_j)
+            (next_i,next_j) = (cros_i,cros_j-next_index)
+        else:
+            raise Exception("Invalid orientation pairs: prev_word: '%s' as '%s', next_word: '%s' as '%s'"\
+                            % (prev_word,prev_o,next_word,next_o))
+
+        success = place_word_in_layout(layout,next_i,next_j,next_word,next_o,exclude_boundary=True)
+        if success:
+            log.info("Placed '%s'"%next_word)
+        else:
+            log.info("Failed at '%s'"%next_word)
+            return None
+
+    # Placed all words, append layout to layouts
+    log.info("Completed layout for %s"%(word_crossing_graph.nodes()))
+    return layout
+
+
+
+def construct_layout(word_list,list_of_crossings):
+    """Construct a layout for the given list of words and character
+    crossings. Return the layout if feasibl. Return None if not
+    possible.
+
+    """
+    # Construct the word_crossing graph from the list crossings
+    word_crossing_graph = nx.Graph()
+    word_crossing_graph.add_nodes_from(word_list)
+    for (wordA,indexA,wordB,indexB) in list_of_crossings:
+        word_crossing_graph.add_edge(wordA,wordB,{wordA:indexA,wordB:indexB})
+
+    # Handle multiple components by iterating through all
+    # connected components starting here.
+    subgraphs = nx.connected_component_subgraphs(word_crossing_graph)
+    layouts = []
+    for word_crossing_subgraph in subgraphs:
+        layout = construct_layout_for_connected_graph(word_crossing_subgraph)
+        if layout == None:
+            log.info("Layout failed on subgraph: %s"%(str(word_crossing_subgraph.nodes())))
+            return None
+        layouts.append(layout)
+    # Now have all layouts, need to stitch them together into a single layout
+    master_layout = combine_layouts(layouts)
+    return master_layout
+
+
+def combine_layouts(layouts):
+    """Combine multiple layouts which are independent into a single
+    layout. Currently only appends layouts in the horizontal
+    direction. Mutates the coordinates in the list of layouts given.
+
+    """
+    master_layout = make_layout()
+    master_maxi = 0
+    master_maxj = 0 
+    for layout in layouts:
+        shift_to_origin(layout)
+        maxi = max( i for (i,j) in layout["coords"].keys() ) 
+        maxj = max( j for (i,j) in layout["coords"].keys() )
+        shift(layout,master_maxi,master_maxj)
+        # Transpose only to the right (horizontal) 
+        #master_maxi += maxi
+        master_maxj += maxj+2
+        master_layout["coords"].update(layout["coords"])
+        master_layout["words"].update(layout["words"])
+
+    master_layout["components"] = len(layouts)
+    return master_layout
 
 def ck_maximal_independent_set(G, nodes=None):
     """Modification of nx.maximal_independent_set(G) to induce
@@ -326,8 +376,8 @@ def ck_maximal_independent_set(G, nodes=None):
     return indep_nodes
 
 
-
-if __name__ == '__main__':
+def main():
+    """main procedure from command line"""
 
     if len(sys.argv) < 2:
         print("usage: python ckGraphCrossword.py word_list.txt")
@@ -356,13 +406,14 @@ if __name__ == '__main__':
     # independent set trying to find a feasible set
     feasible_overlaps = None
     layout = None
-    for subset_size in range(len(maximal_overlaps),0,-1):                   # Largest to smallest subsets
-        for subset in itertools.combinations(maximal_overlaps,subset_size): # All possible subsets of given size
+    subsets_tried = 0
+    for subset_size in range(len(maximal_overlaps)//2,0,-1):                   # Largest to smallest subsets
+        for subset in itertools.combinations(maximal_overlaps,subset_size):    # All possible subsets of given size
+            subsets_tried += 1
             log.info("Trying subset size %d: %s"%(subset_size,subset))
             layout = construct_layout(word_list,subset)
             if layout != None:
-                log.info("%d crossings in feasible layout"%subset_size)
-                print("%d crossings in feasible layout"%subset_size)
+                log.info("%d crossings in feasible layout, %d subsets tried"%(subset_size,subsets_tried))
                 feasible_overlaps = subset
                 break
         if feasible_overlaps != None:
@@ -378,5 +429,10 @@ if __name__ == '__main__':
         log.debug("coords: %s"%(sorted(layout["coords"].items())))
         layout_string = twoD_string(layout)
         log.debug("coords: %s"%(sorted(layout["coords"].items())))
+        log.info("%d crossings and %d components in feasible solution"%(subset_size,layout["components"]))
+        log.info(" %d subsets tried"%(subsets_tried))
         print(layout_string)
         
+
+if __name__ == '__main__':
+    main()
