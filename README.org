@@ -1,9 +1,56 @@
-#+TITLE:  Crossword Puzzle Generation using Graph Theory
-#+AUTHOR: Chris Kauffman and Kevin Deronne
-#+EMAIL:  kauffman@cs.gmu.edu
+#+TITLE:   Crossword Puzzle Generation using Graph Theory
+#+AUTHOR:  Chris Kauffman and Kevin Deronne
+#+EMAIL:   kauffman@cs.gmu.edu
+#+STARTUP: showall
 
+* Summary
+This project attempts to do crossword layout using some graph theory
+techniques.  The approach is roughly as follows.
+- Read words required to be in the crossword from a text file
+- Construct all possible crossings of the words based on common
+  letters
+- Construct a graph of the crossing conflicts and find a maximal
+  independent set of that graph to represent a maximum number of
+  crossings possible in layout
+- Repeatedly select a subset of the maximal independent set of
+  crossings to examine
+- Color the word crossing graph using two colors to determine
+  horizontal/vertical feasibility
+- If feasible, attempt an actual 2D layout of the words
+- If at any point layout is infeasible, reject the current subset of
+  crossings and move on to the next subset
+- When a feasible layout is found, return it
 
-* Overview
+While theoretically sound, this approach suffers from severe
+scalability issues as the number of words to include increases.  This
+is due to the large number of possible subsets from the crossing graph
+that even 10-15 words can induce.
+
+A few other details wort mentioning:
+- The project depends on the =networkx= python package and uses its
+  Graph data structure and algorithms
+- With few enough crossings in the set, the word crossing graph is
+  disjoint so several layouts are constructed and merged together in a
+  naive fashion
+- Currently there is support for laying out words as compactly as
+  possible or enforcing a one-cell border around them to allow for
+  easier fill-in later
+
+Steps not implemented yet are as follows
+- Ensuring that the layout is completely connected. This could be done
+  by merging disjoint layouts with a list of acceptable linker words
+- Filling in words adjacent to existing words to form very compact,
+  NYTimes style crosswords. This would likely be done with an
+  available list of filler words and clever use of regular expressions
+- Symmetric layout to a 180 degree rotation which is likely to be very
+  difficult 
+- General code cleanup and implementation of proper layout data
+  structures. As this was a though experiment that was a collaboration
+  between =deronnek= and =kauffman77=, some code was written
+  independently while the rest took a different style. Cleanup would
+  be nice but speed and functionality trump that desire.
+
+* Project Overview
 - Kevin has an interesting problem: crossword puzzle generation
 - For his problem he has some interesting variants
 - The first is constraint is that he has a fixed set of words he would
@@ -17,7 +64,6 @@
 - Each of these are constraints except the last which is a sort of
   objective though it might possible by gradually enlarging
   constraints to get it (grow the grid outward)
-
 
 * Maximizing Word Crossings
 Another thought occurred to me though which is to consider the
